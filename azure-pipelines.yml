@@ -1,0 +1,97 @@
+# Copyright 2019 The Grin Developers
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+trigger:
+  branches:
+    include:
+      - master
+  tags:
+    include: ['*']
+
+pr:
+  branches:
+    include: ['*']
+
+variables:
+  RUST_BACKTRACE: '1'
+  RUSTFLAGS: '-C debug-assertions'
+  ghpages_user: 'whyproject'
+  ghpages_repo: 'whyproject.github.io'
+  ghpages_auth_header: '$(echo -n "${ghpages_user}:$(github_pat)" | base64);'
+
+jobs:
+- job: linux
+  timeoutInMinutes: 120
+  pool:
+    vmImage: ubuntu-latest
+  strategy:
+    matrix:
+      test:
+        CI_JOB: test-all
+      release:
+        CI_JOB: release
+        PLATFORM: linux-amd64
+  steps:
+    - script: |
+        sudo apt-get update -yqq
+        sudo apt-get purge --auto-remove clang-12 clang-format-12 llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime clang-11 clang-format-11 llvm-11 llvm-11-dev llvm-11-tools llvm-11-runtime clang-10 clang-format-10 llvm-10 llvm-10-dev llvm-10-tools llvm-10-runtime clang-9 clang-format-9 llvm-9 llvm-9-dev llvm-9-tools llvm-9-runtime
+        sudo apt install clang-8 git curl make build-essential mesa-utils libgl1-mesa-dev openssl libssl-dev -y
+        sudo apt-get install -yqq --no-install-recommends libncursesw5-dev
+    - template: '.ci/test.yml'
+    - template: '.ci/release.yml'
+- job: macos
+  timeoutInMinutes: 120
+  pool:
+    vmImage: macos-latest
+  strategy:
+    matrix:
+      test:
+        CI_JOB: test-all
+      release:
+        CI_JOB: release
+        PLATFORM: macos
+  steps:
+    - script: |
+        brew uninstall llvm
+      displayName: macOS Uninstall LLVM
+    - template: '.ci/test.yml'
+    - template: '.ci/release.yml'
+- job: windows
+  pool:
+    vmImage: windows-latest
+  strategy:
+    matrix:
+      test:
+        CI_JOB: test-all
+      release:
+        CI_JOB: release
+        PLATFORM: win-x64
+  steps:
+    - script: |
+        choco install -y llvm
+        choco install -y openssl
+      displayName: Windows Install LLVM
+    - template: '.ci/test.yml'
+    - template: '.ci/windows-release.yml'
+- job: Docs
+  timeoutInMinutes: 60
+  pool:
+    vmImage: ubuntu-latest
+  strategy:
+    matrix:
+      release:
+        CI_JOB: release
+        PLATFORM: linux-amd64
+  steps:
+    - template: '.ci/pushdocs.yml'

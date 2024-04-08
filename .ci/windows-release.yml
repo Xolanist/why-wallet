@@ -1,0 +1,56 @@
+steps:
+  - script: '.ci\win64_cargo.bat  test --all'
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\lib
+      LLVM_CONFIG_PATH: C:\Program Files\LLVM\bin\llvm-config
+      ROARING_ARCH: x86-64-v2
+    displayName: Cargo Test All
+    condition:  and(succeeded(), contains(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+  - script: 'build_static64.bat'
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\lib
+      LLVM_CONFIG_PATH: C:\Program Files\LLVM\bin\llvm-config
+      ROARING_ARCH: x86-64-v2
+    displayName: Build Release
+  - script: |
+      SET MY_TAG=$(Build.SourceBranch)
+      SET MY_TAG=%MY_TAG:~10%
+      echo %MY_TAG%
+      echo %PLATFORM%
+      echo ##vso[task.setvariable variable=build.my_tag]%MY_TAG%
+      echo ##vso[task.setvariable variable=build.platform]%PLATFORM%
+    displayName: "Create my tag variable"
+    condition:  and(succeeded(), contains(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+  - task: CopyFiles@2
+    displayName: Copy assets
+    condition:  and(succeeded(), contains(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+    inputs:
+      sourceFolder: '$(Build.SourcesDirectory)\target\release'
+      contents: 'why-wallet.exe'
+      targetFolder: '$(Build.BinariesDirectory)\why-wallet'
+  - task: ArchiveFiles@2
+    displayName: Gather assets
+    condition:  and(succeeded(), contains(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+    inputs:
+      rootFolderOrFile: '$(Build.BinariesDirectory)\why-wallet'
+      archiveType: 'zip'
+      archiveFile: '$(Build.ArtifactStagingDirectory)\why-wallet-$(build.my_tag)-$(build.platform).zip'
+  - script: |
+      powershell -Command "cd $(Build.ArtifactStagingDirectory); get-filehash -algorithm sha256 why-wallet-$(build.my_tag)-$(build.platform).zip | Format-List |  Out-String | ForEach-Object { $_.Trim() } > why-wallet-$(build.my_tag)-$(build.platform)-sha256sum.txt"
+    displayName: Create Checksum
+    condition:  and(succeeded(), contains(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+  - task: GithubRelease@0
+    displayName: Github release
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/'), eq(variables['CI_JOB'], 'release' ))
+    inputs:
+      gitHubConnection: 'github.com_bayk'
+      repositoryName: 'whyproject/why-wallet'
+      action: 'edit'
+      tagSource: "Git tag"
+      tag: '$(build.my_tag)'
+      assets: |
+        $(Build.ArtifactStagingDirectory)\why-wallet-$(build.my_tag)-$(build.platform).zip
+        $(Build.ArtifactStagingDirectory)\why-wallet-$(build.my_tag)-$(build.platform)-sha256sum.txt
+      title: '$(build.my_tag)'
+      assetUploadMode: 'replace'
+      addChangeLog: true
